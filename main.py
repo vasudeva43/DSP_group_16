@@ -1,30 +1,29 @@
 import numpy as np
-import pyaudio
+from scipy.io import wavfile
 from scipy.signal import lfilter
 
 # Constants
-RATE = 48000  # Sampling rate in Hz
-CHUNK = 1024  # Audio chunk size
 NUM_HARMONICS = 40  # Number of harmonics to decompose
 STEP_SIZE = 0.005  # FXNLMS step size
-DELAY_SAMPLES = 6  # Delay for prediction (samples)
 WINDOW_SIZE = 960  # Window size for F0 estimation (20ms window)
 
-# Initialize PyAudio
-audio = pyaudio.PyAudio()
+# Function to read .wav file
+def read_wav(file_path):
+    sample_rate, data = wavfile.read(file_path)
+    return sample_rate, data.astype(np.float32)
 
-# Open audio input and output streams
-input_stream = audio.open(format=pyaudio.paFloat32, channels=1, rate=RATE, input=True, frames_per_buffer=CHUNK)
-output_stream = audio.open(format=pyaudio.paFloat32, channels=1, rate=RATE, output=True, frames_per_buffer=CHUNK)
+# Function to save .wav file
+def save_wav(file_path, sample_rate, data):
+    wavfile.write(file_path, sample_rate, data.astype(np.int16))
 
-def autocorrelation(signal):
+def autocorrelation(signal, sample_rate):
     """Estimate fundamental frequency using autocorrelation method."""
     corr = np.correlate(signal, signal, mode='full')
     corr = corr[len(corr)//2:]  # Use positive lags
     d = np.diff(corr)
     start = np.where(d > 0)[0][0]  # First positive difference
     peak = np.argmax(corr[start:]) + start
-    f0 = RATE / peak
+    f0 = sample_rate / peak
     return f0
 
 def harmonic_decomposition(signal, f0, sampling_rate, num_harmonics):
@@ -58,40 +57,31 @@ def generate_anti_noise(harmonics, quadrature, weights):
 # Initialize weights for the FXNLMS adaptive filter
 weights = np.zeros((2, NUM_HARMONICS))  # Separate weights for harmonics and quadrature components
 
-try:
-    while True:
-        # Read audio input
-        data = np.frombuffer(input_stream.read(CHUNK), dtype=np.float32)
+def process_wav_files(input_wav, error_wav, output_wav):
+    # Load input and error .wav files
+    sample_rate, input_signal = read_wav(input_wav)
+    _, error_signal = read_wav(error_wav)
+    
+    # Ensure both signals are the same length
+    min_len = min(len(input_signal), len(error_signal))
+    input_signal = input_signal[:min_len]
+    error_signal = error_signal[:min_len]
 
-        # Estimate fundamental frequency using autocorrelation on a 20ms window
-        f0 = autocorrelation(data[:WINDOW_SIZE])
+    # Estimate fundamental frequency using autocorrelation on a 20ms window
+    f0 = autocorrelation(input_signal[:WINDOW_SIZE], sample_rate)
 
-        # Harmonic decomposition
-        harmonics = harmonic_decomposition(data, f0, RATE, NUM_HARMONICS)
-        quadrature = quadrature_harmonics(harmonics)
+    # Harmonic decomposition
+    harmonics = harmonic_decomposition(input_signal, f0, sample_rate, NUM_HARMONICS)
+    quadrature = quadrature_harmonics(harmonics)
 
-        # Simulate error signal (e.g., residual noise at error microphone)
-        error_signal = data  # In practice, this would come from an error microphone
+    # FXNLMS adaptive filtering update
+    weights = fxnlms_update(harmonics, quadrature, error_signal, weights, STEP_SIZE)
 
-        # FXNLMS adaptive filtering update
-        weights = fxnlms_update(harmonics, quadrature, error_signal, weights, STEP_SIZE)
+    # Generate anti-noise signal
+    anti_noise = generate_anti_noise(harmonics, quadrature, weights)
 
-        # Generate anti-noise signal
-        anti_noise = generate_anti_noise(harmonics, quadrature, weights)
+    # Save the anti-noise signal to output .wav
+    save_wav(output_wav, sample_rate, anti_noise)
 
-        # Output the anti-noise signal to the headphones
-        output_stream.write(anti_noise.tobytes())
-
-except KeyboardInterrupt:
-    print("ANC stopped.")
-
-finally:
-    # Close the streams and terminate PyAudio
-    input_stream.stop_stream()
-    input_stream.close()
-    output_stream.stop_stream()
-    output_stream.close()
-    audio.terminate()
-
-
-# This is the code
+# Example usage with .wav files
+process_wav_files('input_signal.wav', 'error_signal.wav', 'output_anti_noise.wav')

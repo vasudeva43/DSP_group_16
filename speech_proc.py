@@ -3,7 +3,7 @@ from scipy.io import wavfile
 import matplotlib.pyplot as plt
 
 # Function to add lag (in seconds) and reduce power
-def process_signal(signal, sample_rate, lag_seconds=0.05, power_reduction_db=-6):
+def process_signal(signal, sample_rate, lag_seconds=0.05, power_reduction_db=-20):
     # Convert dB reduction to linear scale
     power_reduction = 10 ** (power_reduction_db / 20)
     
@@ -53,6 +53,9 @@ def simulate_test_signal(test_signal_path, additional_speech_path, output_path, 
     # Save the mixed signal as a .wav file
     save_wav(output_path, sample_rate, final_signal)
     print(f"Processed and mixed signal saved to {output_path}")
+
+
+
 
 # Test the function
 simulate_test_signal('test_signal.wav', 'additional_speech.wav', 'output_test_signal.wav', lag_seconds=0.05, power_reduction_db=-6)

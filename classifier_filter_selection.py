@@ -48,12 +48,14 @@ def process_audio(input_wav, output_wav, classifier, hardware_input):
     
     # Hardware input override
     filter_decision = hardware_override(signal, hardware_input)
+    
 
     # If no override, use ML classification to select filter
     if filter_decision is None:
         if noise_type == 0:  # Speech
             filter_decision = 'bandstop'
         elif noise_type == 1:  # Traffic
+
             filter_decision = 'lowpass'
         elif noise_type == 2:  # Wind
             filter_decision = 'highpass'
