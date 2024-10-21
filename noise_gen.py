@@ -1,16 +1,18 @@
 import numpy as np
 from scipy.io.wavfile import write
 
-RATE = 48000  # Sample rate
-DURATION = 10  # 10 seconds
-FREQUENCY = 400  # 400 Hz test tone
+# Constants
+length = 100000
+amp = 2
+RATE = 8000  # Add a sample rate definition (e.g., 8kHz)
 
-t = np.linspace(0, DURATION, int(RATE * DURATION), endpoint=False)
-test_signal = 0.5 * np.sin(2 * np.pi * FREQUENCY * t)
+# Function to generate random noise
+def noise_gen(amp, length):
+    test_noise = 2 * amp * (np.random.random(length) - 0.5)
+    error_noise = 2 * amp * (np.random.random(length) - 0.5)
 
-write("test_noise.wav", RATE, test_signal.astype(np.float32))
+    write("./modified/test_noise.wav", RATE, test_noise.astype(np.float32))
+    write("./modified/error_noise.wav", RATE, error_noise.astype(np.float32))
 
-#for noise
-
-#Record Error Signal:
-#Place a microphone at the error position (near the ear) and record the residual noise after ANC is applied
+# Call the function to generate noise
+noise_gen(amp, length)

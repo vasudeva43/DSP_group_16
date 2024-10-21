@@ -84,4 +84,4 @@ def process_wav_files(input_wav, error_wav, output_wav):
     save_wav(output_wav, sample_rate, anti_noise)
 
 # Example usage with .wav files
-process_wav_files('input_signal.wav', 'error_signal.wav', 'output_anti_noise.wav')
+process_wav_files('./modified/main_signal.wav', './modified/error_signal.wav', 'output_anti_noise.wav')
