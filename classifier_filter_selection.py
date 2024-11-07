@@ -1,5 +1,5 @@
 import numpy as np
-import pyaudio
+#import pyaudio
 from sklearn.ensemble import RandomForestClassifier
 from scipy.signal import butter, lfilter
 from scipy.io import wavfile
@@ -7,7 +7,7 @@ from scipy.io import wavfile
 # Placeholder: Train a simple noise classifier
 def train_noise_classifier():
     # Example: Train with features and labels
-    features = np.random.rand(100, 10)  # Replace with real features
+    features = np.random.rand(100, 2)  # Replace with real features
     labels = np.random.choice([0, 1, 2], 100)  # 0: Speech, 1: Traffic, 2: Wind noise
     classifier = RandomForestClassifier()
     classifier.fit(features, labels)
@@ -16,7 +16,7 @@ def train_noise_classifier():
 # Function to classify the noise type
 def classify_noise(signal, classifier):
     # Extract features (for simplicity, mean and variance as example features)
-    feature = np.array([np.mean(signal), np.var(signal)]).reshape(1, -2)
+    feature = np.array([np.mean(signal), np.var(signal)]).reshape(1, -1)
     return classifier.predict(feature)
 
 # Filter functions
@@ -45,10 +45,10 @@ def process_audio(input_wav, output_wav, classifier, hardware_input):
 
     # Classify noise using ML model
     noise_type = classify_noise(signal, classifier)
-    
+
     # Hardware input override
     filter_decision = hardware_override(signal, hardware_input)
-    
+
 
     # If no override, use ML classification to select filter
     if filter_decision is None:
