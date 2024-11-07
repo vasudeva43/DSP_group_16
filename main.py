@@ -1,80 +1,72 @@
 import numpy as np
 from scipy.io import wavfile
-from scipy.signal import butter, filtfilt, hilbert, lfilter
-from scipy.fft import fft, ifft
+from scipy.signal import butter, lfilter, hilbert
 
-# Constants
-NUM_HARMONICS = 60
-STEP_SIZE = 0.01
-WINDOW_SIZE = 1024
+class ImprovedHMDANC:
+    def __init__(self, num_harmonics=40, step_size=0.01, filter_length=1024):
+        self.num_harmonics = num_harmonics
+        self.step_size = step_size
+        self.filter_length = filter_length
+        self.weights = np.zeros((num_harmonics, filter_length))
 
-# ... (keep all the previous functions as they are) ...
-
-def secondary_path_model(x, b):
-    return lfilter(b, [1.0], x)
-
-def hmd_anc(input_signal, error_signal, sample_rate, D=50, L=60, mu=0.01):
-    input_signal = input_signal / np.max(np.abs(input_signal))
-    
-    b, a = butter(4, [50/24000, 2000/24000], btype='band')
-    input_signal = filtfilt(b, a, input_signal)
-    
-    # Estimate fundamental frequency
-    f0 = autocorrelation(input_signal[:WINDOW_SIZE], sample_rate)
-    
-    # Harmonic decomposition
-    harmonics = harmonic_decomposition(input_signal, f0, sample_rate, L)
-    quadrature = quadrature_harmonics(harmonics)
-    
-    e = np.zeros_like(input_signal, dtype=np.float32)
-    y = np.zeros_like(input_signal, dtype=np.float32)
-    w_in = np.zeros((L, 1), dtype=np.float32)
-    w_quad = np.zeros((L, 1), dtype=np.float32)
-    
-    power = np.zeros(L, dtype=np.float32)
-    beta = 0.995
-    leak = 0.9999
-    
-    # Simple secondary path model (can be improved with actual measurements)
-    b_secondary = np.ones(10) / 10
-    
-    for n in range(D, len(input_signal)):
-        power = beta * power + (1-beta) * (harmonics[:, n-D]**2 + quadrature[:, n-D]**2)
+    def preprocess_signal(self, signal, fs):
+        # Normalize
+        signal = signal / np.max(np.abs(signal))
         
-        mu_n = mu / (power + 1e-6)
-        
-        x_in = harmonics[:, n-D].reshape(-1, 1)
-        x_quad = quadrature[:, n-D].reshape(-1, 1)
-        
-        y[n] = np.sum(w_in * x_in + w_quad * x_quad)
-        
-        filtered_y = secondary_path_model(y[:n+1], b_secondary)[-1]
-        e[n] = error_signal[n] - filtered_y
-        
-        w_in = leak * w_in + mu_n.reshape(-1, 1) * e[n] * x_in
-        w_quad = leak * w_quad + mu_n.reshape(-1, 1) * e[n] * x_quad
-        
-        np.clip(w_in, -1, 1, out=w_in)
-        np.clip(w_quad, -1, 1, out=w_quad)
-    
-    return y
+        # Apply bandpass filter (50-2000 Hz)
+        nyq = fs / 2
+        b, a = butter(4, [50/nyq, 2000/nyq], btype='band')
+        return lfilter(b, a, signal)
 
-# Paths to input and output files
-input_signal_path = './sample_data/modified/main_signal.wav'
-error_signal_path = './sample_data/modified/error_signal.wav'
-output_hmd_path = './sample_data/modified/output_hmd_anc.wav'
+    def estimate_f0(self, signal, fs, frame_length=1024):
+        frames = np.array([signal[i:i+frame_length] for i in range(0, len(signal)-frame_length, frame_length//2)])
+        f0s = []
+        for frame in frames:
+            corr = np.correlate(frame, frame, mode='full')
+            corr = corr[len(corr)//2:]
+            peak = np.argmax(corr[20:]) + 20  # Avoid first 20 samples to skip first peak
+            f0 = fs / peak
+            f0s.append(np.clip(f0, 50, 500))  # Limit to reasonable range
+        return np.array(f0s)
 
-# Load signals
-sample_rate, input_signal = read_wav(input_signal_path)
-_, error_signal = read_wav(error_signal_path)
+    def generate_harmonics(self, signal, f0s, fs):
+        t = np.arange(len(signal)) / fs
+        harmonics = np.zeros((self.num_harmonics, len(signal)))
+        for i, f0 in enumerate(f0s):
+            start = i * len(signal) // len(f0s)
+            end = (i + 1) * len(signal) // len(f0s)
+            for n in range(1, self.num_harmonics + 1):
+                harmonics[n-1, start:end] = np.cos(2 * np.pi * n * f0 * t[start:end])
+        return harmonics
 
-# Ensure both signals have the same length
-min_length = min(len(input_signal), len(error_signal))
-input_signal = input_signal[:min_length]
-error_signal = error_signal[:min_length]
+    def adaptive_filter(self, harmonics, error):
+        anti_noise = np.zeros_like(error)
+        for n in range(len(error)):
+            x = harmonics[:, n:n+self.filter_length]
+            y = np.sum(self.weights * x)
+            anti_noise[n] = y
+            self.weights += self.step_size * error[n] * x / (np.sum(x**2) + 1e-6)
+        return anti_noise
 
-# Run HMD-ANC
-hmd_anc_output = hmd_anc(input_signal, error_signal, sample_rate)
+    def process(self, input_wav, error_wav, output_wav):
+        fs, input_signal = wavfile.read(input_wav)
+        _, error_signal = wavfile.read(error_wav)
 
-# Save HMD-ANC output
-save_wav(output_hmd_path, sample_rate, hmd_anc_output)
+        min_len = min(len(input_signal), len(error_signal))
+        input_signal = input_signal[:min_len]
+        error_signal = error_signal[:min_len]
+
+        input_signal = self.preprocess_signal(input_signal, fs)
+        error_signal = self.preprocess_signal(error_signal, fs)
+
+        f0s = self.estimate_f0(input_signal, fs)
+        harmonics = self.generate_harmonics(input_signal, f0s, fs)
+
+        anti_noise = self.adaptive_filter(harmonics, error_signal)
+
+        anti_noise = anti_noise * 32767 / np.max(np.abs(anti_noise))
+        wavfile.write(output_wav, fs, anti_noise.astype(np.int16))
+
+# Usage
+anc = ImprovedHMDANC()
+anc.process('./sample_data/modified/main_signal.wav', './sample_data/modified/error_signal.wav', './sample_data/modified/output_anti_noise.wav')

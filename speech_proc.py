@@ -86,4 +86,4 @@ main_path = './sample_data/modified/main_signal.wav'
 original_path = './sample_data/modified/orig_signal.wav'
 
 # Simulate the test signal
-simulate_test_signal(folder_path, output_path, main_path, lag_seconds=0.05, power_reduction_db=-6, n_amp = 1)
+simulate_test_signal(folder_path, output_path, main_path, lag_seconds=0.05, power_reduction_db=-6, n_amp = 0.01)
