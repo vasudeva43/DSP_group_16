@@ -1,87 +1,80 @@
 import numpy as np
 from scipy.io import wavfile
-from scipy.signal import lfilter
+from scipy.signal import butter, filtfilt, hilbert, lfilter
+from scipy.fft import fft, ifft
 
 # Constants
-NUM_HARMONICS = 40  # Number of harmonics to decompose
-STEP_SIZE = 0.005  # FXNLMS step size
-WINDOW_SIZE = 960  # Window size for F0 estimation (20ms window)
+NUM_HARMONICS = 60
+STEP_SIZE = 0.01
+WINDOW_SIZE = 1024
 
-# Function to read .wav file
-def read_wav(file_path):
-    sample_rate, data = wavfile.read(file_path)
-    return sample_rate, data.astype(np.float32)
+# ... (keep all the previous functions as they are) ...
 
-# Function to save .wav file
-def save_wav(file_path, sample_rate, data):
-    wavfile.write(file_path, sample_rate, data.astype(np.int16))
+def secondary_path_model(x, b):
+    return lfilter(b, [1.0], x)
 
-def autocorrelation(signal, sample_rate):
-    """Estimate fundamental frequency using autocorrelation method."""
-    corr = np.correlate(signal, signal, mode='full')
-    corr = corr[len(corr)//2:]  # Use positive lags
-    d = np.diff(corr)
-    start = np.where(d > 0)[0][0]  # First positive difference
-    peak = np.argmax(corr[start:]) + start
-    f0 = sample_rate / peak
-    return f0
-
-def harmonic_decomposition(signal, f0, sampling_rate, num_harmonics):
-    """Decompose signal into harmonic components."""
-    harmonics = []
-    omega_0 = 2 * np.pi * f0 / sampling_rate
-    for l in range(1, num_harmonics + 1):
-        harmonic = np.cos(l * omega_0 * np.arange(len(signal)))
-        harmonics.append(harmonic)
-    return np.array(harmonics)
-
-def quadrature_harmonics(harmonics):
-    """Generate quadrature harmonics (90-degree phase shift)."""
-    quadrature = np.sin(np.angle(harmonics))
-    return quadrature
-
-def fxnlms_update(harmonics, quadrature, error_signal, weights, step_size):
-    """Update FXNLMS weights for harmonics and their quadrature components."""
-    num_harmonics = harmonics.shape[0]
-    for l in range(num_harmonics):
-        # Update for both harmonic and quadrature components
-        weights[0, l] += step_size * error_signal * harmonics[l]
-        weights[1, l] += step_size * error_signal * quadrature[l]
-    return weights
-
-def generate_anti_noise(harmonics, quadrature, weights):
-    """Generate anti-noise signal using weighted harmonics and quadrature."""
-    anti_noise = np.sum(weights[0] * harmonics + weights[1] * quadrature, axis=0)
-    return anti_noise
-
-# Initialize weights for the FXNLMS adaptive filter
-weights = np.zeros((2, NUM_HARMONICS))  # Separate weights for harmonics and quadrature components
-
-def process_wav_files(input_wav, error_wav, output_wav):
-    # Load input and error .wav files
-    sample_rate, input_signal = read_wav(input_wav)
-    _, error_signal = read_wav(error_wav)
+def hmd_anc(input_signal, error_signal, sample_rate, D=50, L=60, mu=0.01):
+    input_signal = input_signal / np.max(np.abs(input_signal))
     
-    # Ensure both signals are the same length
-    min_len = min(len(input_signal), len(error_signal))
-    input_signal = input_signal[:min_len]
-    error_signal = error_signal[:min_len]
-
-    # Estimate fundamental frequency using autocorrelation on a 20ms window
+    b, a = butter(4, [50/24000, 2000/24000], btype='band')
+    input_signal = filtfilt(b, a, input_signal)
+    
+    # Estimate fundamental frequency
     f0 = autocorrelation(input_signal[:WINDOW_SIZE], sample_rate)
-
+    
     # Harmonic decomposition
-    harmonics = harmonic_decomposition(input_signal, f0, sample_rate, NUM_HARMONICS)
+    harmonics = harmonic_decomposition(input_signal, f0, sample_rate, L)
     quadrature = quadrature_harmonics(harmonics)
+    
+    e = np.zeros_like(input_signal, dtype=np.float32)
+    y = np.zeros_like(input_signal, dtype=np.float32)
+    w_in = np.zeros((L, 1), dtype=np.float32)
+    w_quad = np.zeros((L, 1), dtype=np.float32)
+    
+    power = np.zeros(L, dtype=np.float32)
+    beta = 0.995
+    leak = 0.9999
+    
+    # Simple secondary path model (can be improved with actual measurements)
+    b_secondary = np.ones(10) / 10
+    
+    for n in range(D, len(input_signal)):
+        power = beta * power + (1-beta) * (harmonics[:, n-D]**2 + quadrature[:, n-D]**2)
+        
+        mu_n = mu / (power + 1e-6)
+        
+        x_in = harmonics[:, n-D].reshape(-1, 1)
+        x_quad = quadrature[:, n-D].reshape(-1, 1)
+        
+        y[n] = np.sum(w_in * x_in + w_quad * x_quad)
+        
+        filtered_y = secondary_path_model(y[:n+1], b_secondary)[-1]
+        e[n] = error_signal[n] - filtered_y
+        
+        w_in = leak * w_in + mu_n.reshape(-1, 1) * e[n] * x_in
+        w_quad = leak * w_quad + mu_n.reshape(-1, 1) * e[n] * x_quad
+        
+        np.clip(w_in, -1, 1, out=w_in)
+        np.clip(w_quad, -1, 1, out=w_quad)
+    
+    return y
 
-    # FXNLMS adaptive filtering update
-    weights = fxnlms_update(harmonics, quadrature, error_signal, weights, STEP_SIZE)
+# Paths to input and output files
+input_signal_path = './sample_data/modified/main_signal.wav'
+error_signal_path = './sample_data/modified/error_signal.wav'
+output_hmd_path = './sample_data/modified/output_hmd_anc.wav'
 
-    # Generate anti-noise signal
-    anti_noise = generate_anti_noise(harmonics, quadrature, weights)
+# Load signals
+sample_rate, input_signal = read_wav(input_signal_path)
+_, error_signal = read_wav(error_signal_path)
 
-    # Save the anti-noise signal to output .wav
-    save_wav(output_wav, sample_rate, anti_noise)
+# Ensure both signals have the same length
+min_length = min(len(input_signal), len(error_signal))
+input_signal = input_signal[:min_length]
+error_signal = error_signal[:min_length]
 
-# Example usage with .wav files
-process_wav_files('./modified/main_signal.wav', './modified/error_signal.wav', 'output_anti_noise.wav')
+# Run HMD-ANC
+hmd_anc_output = hmd_anc(input_signal, error_signal, sample_rate)
+
+# Save HMD-ANC output
+save_wav(output_hmd_path, sample_rate, hmd_anc_output)
