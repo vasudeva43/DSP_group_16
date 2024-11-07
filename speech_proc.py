@@ -38,12 +38,12 @@ def load_wav_files_from_folder(folder_path, limit=None):
     return sample_rate, loaded_signals
 
 # Function to simulate the test signal by adding lag, reducing power, and mixing multiple additional speeches
-def simulate_test_signal(folder_path, output_path, tnoise_path, enoise_path, main_path, lag_seconds=0.05, power_reduction_db=-6):
+def simulate_test_signal(folder_path, output_path, main_path, lag_seconds=0.05, power_reduction_db=-6, n_amp = 1):
     # List all .wav files in the folder
     wav_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.wav')]
 
-    sample_rate, test_noise = load_wav(tnoise_path)
-    sample_rate, error_noise = load_wav(enoise_path)
+    #sample_rate, test_noise = load_wav(tnoise_path)
+    #sample_rate, error_noise = load_wav(enoise_path)
 
     # Randomly select a file as the test signal
     test_signal_file = random.choice(wav_files)
@@ -61,22 +61,29 @@ def simulate_test_signal(folder_path, output_path, tnoise_path, enoise_path, mai
 
     # Mix all the additional speech signals
     additional_speech_mixed = mix_signals(additional_speeches)
-    
+
+    length = len(test_signal)
+
+    test_noise = 2 * n_amp * (np.random.random(length) - 0.5)
+    error_noise = 2 * n_amp * (np.random.random(length) - 0.5)
+
     # Mix the processed test signal with the additional speech noise
     final_signal = mix_signals([processed_test_signal, additional_speech_mixed, error_noise])
-    test_signal = mix_signals([test_signal, test_noise, additional_speech_mixed])
+    test_signal1 = mix_signals([test_signal, test_noise, additional_speech_mixed])
 
     # Save the mixed signal as a .wav file
     save_wav(output_path, sample_rate, final_signal)
-    save_wav(main_path, sample_rate, test_signal)
+    save_wav(main_path, sample_rate, test_signal1)
+    save_wav(original_path, sample_rate, test_signal)
     print(f"Processed and mixed signal saved to {output_path}")
 
 # Relative paths to the folder and output file
-folder_path = './original'
-tnoise_path = './modified/test_noise.wav'
-enoise_path = './modified/error_noise.wav'
-output_path = './modified/error_signal.wav'
-main_path = './modified/main_signal.wav'
+folder_path = './sample_data/original'
+#tnoise_path = './sample_data/modified/test_noise.wav'
+#enoise_path = './sample_data/modified/error_noise.wav'
+output_path = './sample_data/modified/error_signal.wav'
+main_path = './sample_data/modified/main_signal.wav'
+original_path = './sample_data/modified/orig_signal.wav'
 
 # Simulate the test signal
-simulate_test_signal(folder_path, output_path, tnoise_path, enoise_path, main_path, lag_seconds=0.05, power_reduction_db=-6)
+simulate_test_signal(folder_path, output_path, main_path, lag_seconds=0.05, power_reduction_db=-6, n_amp = 1)
