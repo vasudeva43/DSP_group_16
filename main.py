@@ -1,13 +1,13 @@
 import numpy as np
 from scipy.io import wavfile
-from scipy.signal import butter, lfilter, hilbert
+from scipy.signal import butter, lfilter
 
 class ImprovedHMDANC:
     def __init__(self, num_harmonics=40, step_size=0.01, filter_length=1024):
         self.num_harmonics = num_harmonics
         self.step_size = step_size
         self.filter_length = filter_length
-        self.weights = np.zeros((num_harmonics, filter_length))
+        self.weights = np.zeros(num_harmonics)
 
     def preprocess_signal(self, signal, fs):
         # Normalize
@@ -42,10 +42,10 @@ class ImprovedHMDANC:
     def adaptive_filter(self, harmonics, error):
         anti_noise = np.zeros_like(error)
         for n in range(len(error)):
-            x = harmonics[:, n:n+self.filter_length]
-            y = np.sum(self.weights * x)
+            x = harmonics[:, n]
+            y = np.dot(self.weights, x)
             anti_noise[n] = y
-            self.weights += self.step_size * error[n] * x / (np.sum(x**2) + 1e-6)
+            self.weights += self.step_size * error[n] * x / (np.dot(x, x) + 1e-6)
         return anti_noise
 
     def process(self, input_wav, error_wav, output_wav):
