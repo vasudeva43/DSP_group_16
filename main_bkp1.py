@@ -10,7 +10,10 @@ class HMDANC:
         self.weights = np.zeros(num_harmonics)
         self.leakage = leakage
 
-    def preprocess_signal(self, signal, fs):        
+    def preprocess_signal(self, signal, fs):
+        # Normalize
+        signal = signal / np.max(np.abs(signal))
+        
         # Apply bandpass filter (50-2000 Hz)
         nyq = fs / 2
         b, a = butter(4, [50/nyq, 2000/nyq], btype='band')
@@ -46,10 +49,10 @@ class HMDANC:
             
             # Normalize step size
             power = np.dot(x, x)
-            step = self.step_size / (power)
+            normalized_step = self.step_size / (power + 1e-6)
             
             # Update weights with leakage
-            self.weights = self.leakage * self.weights + step * error[n] * x
+            self.weights = self.leakage * self.weights + normalized_step * error[n] * x
             
             # Constrain weights
             self.weights = np.clip(self.weights, -1, 1)

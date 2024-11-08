@@ -10,10 +10,14 @@ STEP_SIZE = 0.01
 def load_wav(file_path):
     sample_rate, data = wavfile.read(file_path)
     data = data.astype(np.float32)
+    if np.max(np.abs(data)) > 0:
+        data = data / np.max(np.abs(data))
     return sample_rate, data
 
 def save_wav(file_path, sample_rate, data):
     max_val = np.max(np.abs(data))
+    if max_val > 0:
+        data = data * (32767 / max_val)
     wavfile.write(file_path, sample_rate, data.astype(np.int16))
 
 def fxlms_anc(test_signal, error_signal, step_size=STEP_SIZE):

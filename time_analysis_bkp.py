@@ -53,7 +53,7 @@ def analyze_signals(ref_path, hmd_path, orig_path, test_signal_path, sample_rate
         #plt.plot(time, signal, label=label, alpha=0.7)
             
     
-    plt.ylabel('Amplitude')
+    plt.ylabel('Normalized Amplitude')
     plt.xlabel('Time [sec]')
     plt.title('Time Domain Signal Comparison')
     plt.legend()
